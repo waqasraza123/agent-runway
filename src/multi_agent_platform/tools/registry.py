@@ -1,6 +1,16 @@
 from pydantic import BaseModel, ConfigDict
 
 
+def list_available_tool_names() -> list[str]:
+    return [
+        "goal_analyzer",
+        "evidence_lookup",
+        "summary_writer",
+        "execution_checker",
+        "generic_tool",
+    ]
+
+
 class PlannedToolCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

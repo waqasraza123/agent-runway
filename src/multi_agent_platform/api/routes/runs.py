@@ -12,6 +12,8 @@ from multi_agent_platform.application.runs import (
     StateTransitionError,
     TurnAdvanceError,
 )
+from multi_agent_platform.contracts.llm_call_views import LlmCallListResponse
+from multi_agent_platform.contracts.llm_calls import LlmCallListQuery
 from multi_agent_platform.contracts.run_approval_views import (
     RunApprovalListResponse,
     RunApprovalResponse,
@@ -111,6 +113,13 @@ def build_run_tool_call_list_query(
     return RunToolCallListQuery(limit=limit, offset=offset)
 
 
+def build_llm_call_list_query(
+    limit: LimitQuery = 20,
+    offset: OffsetQuery = 0,
+) -> LlmCallListQuery:
+    return LlmCallListQuery(limit=limit, offset=offset)
+
+
 def build_approval_list_query(
     limit: LimitQuery = 20,
     offset: OffsetQuery = 0,
@@ -131,6 +140,10 @@ RunTurnListQueryDependency = Annotated[
 RunToolCallListQueryDependency = Annotated[
     RunToolCallListQuery,
     Depends(build_run_tool_call_list_query),
+]
+LlmCallListQueryDependency = Annotated[
+    LlmCallListQuery,
+    Depends(build_llm_call_list_query),
 ]
 ApprovalListQueryDependency = Annotated[
     ApprovalListQuery,
@@ -235,6 +248,18 @@ def list_run_tool_calls(
 ) -> RunToolCallListResponse:
     try:
         return run_service.list_tool_calls(run_id, query)
+    except Exception as error:
+        raise map_run_error(error) from error
+
+
+@router.get("/{run_id}/llm-calls", response_model=LlmCallListResponse)
+def list_run_llm_calls(
+    run_id: str,
+    query: LlmCallListQueryDependency,
+    run_service: RunServiceDependency,
+) -> LlmCallListResponse:
+    try:
+        return run_service.list_llm_calls(run_id, query)
     except Exception as error:
         raise map_run_error(error) from error
 

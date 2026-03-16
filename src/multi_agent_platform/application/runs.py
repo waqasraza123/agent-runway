@@ -1,9 +1,15 @@
-from multi_agent_platform.agents.runtime import execute_deterministic_turn
+from multi_agent_platform.agents.executors import (
+    DeterministicTurnExecutor,
+    TurnExecutor,
+)
+from multi_agent_platform.agents.llm_executor import LlmTurnExecutor
+from multi_agent_platform.agents.runtime import TurnExecutionResult
 from multi_agent_platform.application.run_approvals import (
     build_run_approval_list_response,
     build_run_approval_response,
 )
 from multi_agent_platform.application.run_events import build_run_event_list_response
+from multi_agent_platform.application.run_llm_calls import build_llm_call_list_response
 from multi_agent_platform.application.run_outputs import build_run_output_response
 from multi_agent_platform.application.run_plans import build_run_plan_response
 from multi_agent_platform.application.run_tool_calls import (
@@ -22,6 +28,8 @@ from multi_agent_platform.application.run_views import (
     build_run_state_response,
 )
 from multi_agent_platform.contracts.common import generate_identifier
+from multi_agent_platform.contracts.llm_call_views import LlmCallListResponse
+from multi_agent_platform.contracts.llm_calls import LlmCallListQuery, LlmCallRecord
 from multi_agent_platform.contracts.run_approval_views import (
     RunApprovalListResponse,
     RunApprovalResponse,
@@ -82,6 +90,11 @@ from multi_agent_platform.contracts.runs import (
     TaskRecord,
     TaskStatus,
 )
+from multi_agent_platform.contracts.turn_execution import (
+    AgentExecutionProfile,
+    ExecutionBackend,
+    LlmTurnResponse,
+)
 from multi_agent_platform.orchestration.state import (
     StateTransitionError,
     complete_task,
@@ -91,6 +104,10 @@ from multi_agent_platform.orchestration.state import (
     start_task,
 )
 from multi_agent_platform.planning.templates import build_run_plan
+from multi_agent_platform.storage.llm_call_repository import (
+    InMemoryLlmCallRepository,
+    LlmCallRepository,
+)
 from multi_agent_platform.storage.run_approval_repository import (
     RunApprovalRepository,
 )
@@ -105,7 +122,10 @@ from multi_agent_platform.storage.run_turn_repository import RunTurnRepository
 from multi_agent_platform.storage.run_verification_repository import (
     RunVerificationRepository,
 )
-from multi_agent_platform.tools.registry import execute_planned_tool_call
+from multi_agent_platform.tools.registry import (
+    execute_planned_tool_call,
+    list_available_tool_names,
+)
 
 
 class ApprovalTransitionError(ValueError):
@@ -135,6 +155,11 @@ class RunService:
         run_turn_repository: RunTurnRepository,
         run_tool_call_repository: RunToolCallRepository,
         run_output_repository: RunOutputRepository,
+        turn_executor: TurnExecutor | None = None,
+        llm_call_repository: LlmCallRepository | None = None,
+        execution_backend: ExecutionBackend = ExecutionBackend.DETERMINISTIC,
+        llm_provider_name: str = "fake",
+        llm_model_name: str = "fake-model",
     ) -> None:
         self._run_repository = run_repository
         self._run_event_repository = run_event_repository
@@ -144,6 +169,11 @@ class RunService:
         self._run_turn_repository = run_turn_repository
         self._run_tool_call_repository = run_tool_call_repository
         self._run_output_repository = run_output_repository
+        self._turn_executor = turn_executor or DeterministicTurnExecutor()
+        self._llm_call_repository = llm_call_repository or InMemoryLlmCallRepository()
+        self._execution_backend = execution_backend
+        self._llm_provider_name = llm_provider_name
+        self._llm_model_name = llm_model_name
 
     def create_run(self, request: RunCreateRequest) -> RunResponse:
         run_state = create_run_state(request)
@@ -221,7 +251,7 @@ class RunService:
             raise TurnAdvanceError(f"Run {run_id} does not have an active task")
 
         turn_id = generate_identifier("turn")
-        turn_result = execute_deterministic_turn(run_state, active_task)
+        turn_result = self._execute_turn_result(run_state, active_task, turn_id)
         tool_call_ids: list[str] = []
         evidence_ids: list[str] = []
 
@@ -376,6 +406,15 @@ class RunService:
         run_tool_call_page = self._run_tool_call_repository.list(run_id, query)
         return build_run_tool_call_list_response(run_tool_call_page)
 
+    def list_llm_calls(
+        self,
+        run_id: str,
+        query: LlmCallListQuery,
+    ) -> LlmCallListResponse:
+        self._run_repository.get(run_id)
+        llm_call_page = self._llm_call_repository.list(run_id, query)
+        return build_llm_call_list_response(llm_call_page)
+
     def list_run_events(
         self,
         run_id: str,
@@ -527,6 +566,84 @@ class RunService:
         self._run_repository.get(run_id)
         report = self._run_verification_repository.get_latest(run_id)
         return RunVerificationResponse(item=report)
+
+    def _build_execution_profile(self, task: TaskRecord) -> AgentExecutionProfile:
+        if self._execution_backend is ExecutionBackend.LLM:
+            return AgentExecutionProfile(
+                agent_name=task.assigned_agent,
+                backend=ExecutionBackend.LLM,
+                llm_provider_name=self._llm_provider_name,
+                model_name=self._llm_model_name,
+                timeout_seconds=30.0,
+            )
+        return AgentExecutionProfile(
+            agent_name=task.assigned_agent,
+            backend=ExecutionBackend.DETERMINISTIC,
+        )
+
+    def _execute_turn_result(
+        self,
+        run_state: RunStateSnapshot,
+        task: TaskRecord,
+        turn_id: str,
+    ) -> TurnExecutionResult:
+        execution_profile = self._build_execution_profile(task)
+        if self._execution_backend is ExecutionBackend.LLM:
+            if not isinstance(self._turn_executor, LlmTurnExecutor):
+                raise ValueError("LLM execution backend requires LlmTurnExecutor")
+            llm_response = self._turn_executor.execute_structured_turn(
+                run_state,
+                task,
+                execution_profile,
+            )
+            self._llm_call_repository.save(
+                self._build_llm_call_record(
+                    run_state,
+                    task,
+                    turn_id,
+                    execution_profile,
+                    llm_response,
+                )
+            )
+            return TurnExecutionResult(
+                summary=llm_response.output.summary,
+                planned_tool_calls=llm_response.output.planned_tool_calls,
+            )
+        return self._turn_executor.execute_turn(
+            run_state,
+            task,
+            execution_profile,
+        )
+
+    def _build_llm_call_record(
+        self,
+        run_state: RunStateSnapshot,
+        task: TaskRecord,
+        turn_id: str,
+        execution_profile: AgentExecutionProfile,
+        llm_response: LlmTurnResponse,
+    ) -> LlmCallRecord:
+        return LlmCallRecord(
+            run_id=run_state.run_id,
+            turn_id=turn_id,
+            task_id=task.task_id,
+            agent_name=task.assigned_agent,
+            provider_name=llm_response.provider_name,
+            model_name=llm_response.model_name,
+            structured_output=llm_response.output,
+            usage=llm_response.usage,
+            available_tool_names=list_available_tool_names(),
+            request_payload={
+                "run_id": run_state.run_id,
+                "user_goal": run_state.user_goal,
+                "task": task.model_dump(mode="json"),
+                "execution_profile": execution_profile.model_dump(mode="json"),
+            },
+            response_payload=llm_response.model_dump(mode="json"),
+            finish_reason=llm_response.finish_reason,
+            latency_ms=llm_response.latency_ms,
+            raw_response_text=llm_response.raw_response_text,
+        )
 
     def _find_next_ready_task(
         self,
