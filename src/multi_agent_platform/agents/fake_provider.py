@@ -15,11 +15,9 @@ class FakeLlmProvider:
 
     def generate_turn(self, request: LlmTurnRequest) -> LlmTurnResponse:
         execution_profile = request.execution_profile
-        if execution_profile.llm_provider_name != self.provider_name:
-            raise ValueError(
-                f"FakeLlmProvider cannot satisfy provider "
-                f"{execution_profile.llm_provider_name}"
-            )
+        requested_provider_name = execution_profile.llm_provider_name
+        if requested_provider_name != self.provider_name:
+            raise ValueError(f"FakeLlmProvider cannot satisfy provider {requested_provider_name}")
 
         structured_output = StructuredTurnOutput(
             summary=build_turn_summary(
