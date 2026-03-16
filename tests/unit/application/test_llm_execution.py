@@ -1,5 +1,6 @@
 from multi_agent_platform.agents.fake_provider import FakeLlmProvider
 from multi_agent_platform.agents.llm_executor import LlmTurnExecutor
+from multi_agent_platform.agents.providers import LlmProvider
 from multi_agent_platform.application.runs import RunService
 from multi_agent_platform.contracts.llm_calls import LlmCallListQuery
 from multi_agent_platform.contracts.runs import RunCreateRequest, WorkflowType
@@ -23,13 +24,13 @@ from multi_agent_platform.tools.registry import list_available_tool_names
 
 
 class AlwaysFailProvider:
-    provider_name = "fake"
+    provider_name = 'fake'
 
     def generate_turn(self, request: object) -> object:
-        raise RuntimeError("provider unavailable")
+        raise RuntimeError('provider unavailable')
 
 
-def build_run_service(provider: object | None = None) -> RunService:
+def build_run_service(provider: LlmProvider | None = None) -> RunService:
     llm_provider = provider or FakeLlmProvider()
     return RunService(
         run_repository=InMemoryRunRepository(),
@@ -41,13 +42,13 @@ def build_run_service(provider: object | None = None) -> RunService:
         run_tool_call_repository=InMemoryRunToolCallRepository(),
         run_output_repository=InMemoryRunOutputRepository(),
         turn_executor=LlmTurnExecutor(
-            providers={"fake": llm_provider},
+            providers={llm_provider.provider_name: llm_provider},
             available_tool_names=list_available_tool_names(),
         ),
         llm_call_repository=InMemoryLlmCallRepository(),
         execution_backend=ExecutionBackend.LLM,
-        llm_provider_name="fake",
-        llm_model_name="fake-model",
+        llm_provider_name='fake',
+        llm_model_name='fake-model',
     )
 
 
@@ -55,7 +56,7 @@ def test_run_service_persists_llm_call_records() -> None:
     run_service = build_run_service()
     created_run = run_service.create_run(
         RunCreateRequest(
-            user_goal="Create a technical delivery plan",
+            user_goal='Create a technical delivery plan',
             workflow_type=WorkflowType.TECHNICAL_PLAN,
         )
     )
@@ -69,8 +70,8 @@ def test_run_service_persists_llm_call_records() -> None:
     )
 
     assert llm_call_page.page.total_count == 1
-    assert llm_call_page.items[0].provider_name == "fake"
-    assert llm_call_page.items[0].model_name == "fake-model"
+    assert llm_call_page.items[0].provider_name == 'fake'
+    assert llm_call_page.items[0].model_name == 'fake-model'
     assert llm_call_page.items[0].turn_id == turn_response.turn.turn_id
     assert llm_call_page.items[0].structured_output.summary == turn_response.turn.summary
     assert llm_call_page.items[0].fallback_used is False
@@ -81,7 +82,7 @@ def test_run_service_persists_fallback_llm_call_record() -> None:
     run_service = build_run_service(provider=AlwaysFailProvider())
     created_run = run_service.create_run(
         RunCreateRequest(
-            user_goal="Create a technical delivery plan",
+            user_goal='Create a technical delivery plan',
             workflow_type=WorkflowType.TECHNICAL_PLAN,
         )
     )
@@ -97,5 +98,5 @@ def test_run_service_persists_fallback_llm_call_record() -> None:
     assert llm_call_page.page.total_count == 1
     assert llm_call_page.items[0].fallback_used is True
     assert llm_call_page.items[0].attempt_count == 2
-    assert llm_call_page.items[0].error_message == "provider unavailable"
+    assert llm_call_page.items[0].error_message == 'provider unavailable'
     assert llm_call_page.items[0].structured_output.summary == turn_response.turn.summary

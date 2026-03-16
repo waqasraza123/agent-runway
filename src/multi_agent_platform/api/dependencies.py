@@ -5,6 +5,7 @@ from multi_agent_platform.agents.executors import (
 from multi_agent_platform.agents.fake_provider import FakeLlmProvider
 from multi_agent_platform.agents.llm_executor import LlmTurnExecutor
 from multi_agent_platform.agents.openai_provider import OpenAiCompatibleProvider
+from multi_agent_platform.agents.providers import LlmProvider
 from multi_agent_platform.application.runs import RunService
 from multi_agent_platform.config.settings import (
     Settings,
@@ -56,27 +57,27 @@ _run_service: RunService | None = None
 
 
 def build_turn_executor(settings: Settings) -> TurnExecutor:
-    if settings.execution_backend == "llm":
+    if settings.execution_backend == 'llm':
         available_tool_names = list_available_tool_names()
-        if settings.llm_provider_name == "fake":
+        provider: LlmProvider
+        if settings.llm_provider_name == 'fake':
             provider = FakeLlmProvider()
-            return LlmTurnExecutor(
-                providers={provider.provider_name: provider},
-                available_tool_names=available_tool_names,
-            )
-        if settings.llm_provider_name == "openai":
+        elif settings.llm_provider_name == 'openai':
             if settings.llm_api_key is None:
-                raise ValueError("LLM_API_KEY must be set for openai provider")
+                raise ValueError('LLM_API_KEY must be set for openai provider')
             provider = OpenAiCompatibleProvider(
                 api_key=settings.llm_api_key,
                 base_url=settings.llm_api_base_url,
                 default_model_name=settings.llm_model_name,
             )
-            return LlmTurnExecutor(
-                providers={provider.provider_name: provider},
-                available_tool_names=available_tool_names,
+        else:
+            raise ValueError(
+                f'Unsupported LLM provider {settings.llm_provider_name}'
             )
-        raise ValueError(f"Unsupported LLM provider {settings.llm_provider_name}")
+        return LlmTurnExecutor(
+            providers={provider.provider_name: provider},
+            available_tool_names=available_tool_names,
+        )
     return DeterministicTurnExecutor()
 
 
@@ -122,7 +123,7 @@ def get_run_service() -> RunService:
     global _run_service
     if _run_service is None:
         settings = get_settings()
-        if settings.storage_backend == "sql":
+        if settings.storage_backend == 'sql':
             _run_service = build_sql_run_service(settings)
         else:
             _run_service = build_memory_run_service(settings)
