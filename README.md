@@ -62,7 +62,9 @@ Run API locally:
 
 ## Fast smoke flow
 
+```
 Memory modython -c "from fastapi.testclient import TestClient; from multi_agent_platform.api.dependencies import reset_api_state; from multi_agent_platform.main import app; reset_api_state(); client = TestClient(app); created = client.post(\"/runs\", json={\"user_goal\": \"Create a technical delivery plan\", \"workflow_type\": \"technical_plan\"}); run_id = created.json()[\"item\"][\"run_id\"]; client.post(f\"/runs/{run_id}/plan\"); client.post(f\"/runs/{run_id}/turns/advance\"); client.post(f\"/runs/{run_id}/turns/advance\"); client.post(f\"/runs/{run_id}/turns/advance\"); client.post(f\"/runs/{run_id}/verify\"); finalized = client.post(f\"/runs/{run_id}/finalize\"); print(finalized.status_code, finalized.json()[\"item\"][\"run_id\"])"
+```
 
 SQL mode:
 
