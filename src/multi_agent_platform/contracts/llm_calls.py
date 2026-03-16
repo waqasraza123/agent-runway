@@ -27,6 +27,8 @@ class LlmCallRecord(BaseModel):
     latency_ms: int | None = Field(default=None, ge=0)
     error_message: str | None = None
     raw_response_text: str | None = None
+    attempt_count: int = Field(default=1, ge=1)
+    fallback_used: bool = False
     created_at: datetime = Field(default_factory=utc_now)
 
 

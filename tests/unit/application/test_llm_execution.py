@@ -22,8 +22,15 @@ from multi_agent_platform.storage.run_verification_repository import (
 from multi_agent_platform.tools.registry import list_available_tool_names
 
 
-def build_run_service() -> RunService:
-    provider = FakeLlmProvider()
+class AlwaysFailProvider:
+    provider_name = "fake"
+
+    def generate_turn(self, request: object) -> object:
+        raise RuntimeError("provider unavailable")
+
+
+def build_run_service(provider: object | None = None) -> RunService:
+    llm_provider = provider or FakeLlmProvider()
     return RunService(
         run_repository=InMemoryRunRepository(),
         run_event_repository=InMemoryRunEventRepository(),
@@ -34,7 +41,7 @@ def build_run_service() -> RunService:
         run_tool_call_repository=InMemoryRunToolCallRepository(),
         run_output_repository=InMemoryRunOutputRepository(),
         turn_executor=LlmTurnExecutor(
-            providers={provider.provider_name: provider},
+            providers={"fake": llm_provider},
             available_tool_names=list_available_tool_names(),
         ),
         llm_call_repository=InMemoryLlmCallRepository(),
@@ -65,4 +72,30 @@ def test_run_service_persists_llm_call_records() -> None:
     assert llm_call_page.items[0].provider_name == "fake"
     assert llm_call_page.items[0].model_name == "fake-model"
     assert llm_call_page.items[0].turn_id == turn_response.turn.turn_id
+    assert llm_call_page.items[0].structured_output.summary == turn_response.turn.summary
+    assert llm_call_page.items[0].fallback_used is False
+    assert llm_call_page.items[0].attempt_count == 1
+
+
+def test_run_service_persists_fallback_llm_call_record() -> None:
+    run_service = build_run_service(provider=AlwaysFailProvider())
+    created_run = run_service.create_run(
+        RunCreateRequest(
+            user_goal="Create a technical delivery plan",
+            workflow_type=WorkflowType.TECHNICAL_PLAN,
+        )
+    )
+    run_id = created_run.item.run_id
+
+    run_service.generate_plan(run_id)
+    turn_response = run_service.advance_turn(run_id)
+    llm_call_page = run_service.list_llm_calls(
+        run_id,
+        LlmCallListQuery(limit=10, offset=0),
+    )
+
+    assert llm_call_page.page.total_count == 1
+    assert llm_call_page.items[0].fallback_used is True
+    assert llm_call_page.items[0].attempt_count == 2
+    assert llm_call_page.items[0].error_message == "provider unavailable"
     assert llm_call_page.items[0].structured_output.summary == turn_response.turn.summary

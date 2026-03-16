@@ -93,7 +93,8 @@ from multi_agent_platform.contracts.runs import (
 from multi_agent_platform.contracts.turn_execution import (
     AgentExecutionProfile,
     ExecutionBackend,
-    LlmTurnResponse,
+    LlmExecutionOutcome,
+    LlmUsage,
 )
 from multi_agent_platform.orchestration.state import (
     StateTransitionError,
@@ -575,6 +576,7 @@ class RunService:
                 llm_provider_name=self._llm_provider_name,
                 model_name=self._llm_model_name,
                 timeout_seconds=30.0,
+                max_retries=1,
             )
         return AgentExecutionProfile(
             agent_name=task.assigned_agent,
@@ -591,7 +593,7 @@ class RunService:
         if self._execution_backend is ExecutionBackend.LLM:
             if not isinstance(self._turn_executor, LlmTurnExecutor):
                 raise ValueError("LLM execution backend requires LlmTurnExecutor")
-            llm_response = self._turn_executor.execute_structured_turn(
+            llm_execution = self._turn_executor.execute_turn_outcome(
                 run_state,
                 task,
                 execution_profile,
@@ -602,12 +604,12 @@ class RunService:
                     task,
                     turn_id,
                     execution_profile,
-                    llm_response,
+                    llm_execution,
                 )
             )
             return TurnExecutionResult(
-                summary=llm_response.output.summary,
-                planned_tool_calls=llm_response.output.planned_tool_calls,
+                summary=llm_execution.output.summary,
+                planned_tool_calls=llm_execution.output.planned_tool_calls,
             )
         return self._turn_executor.execute_turn(
             run_state,
@@ -621,17 +623,22 @@ class RunService:
         task: TaskRecord,
         turn_id: str,
         execution_profile: AgentExecutionProfile,
-        llm_response: LlmTurnResponse,
+        llm_execution: LlmExecutionOutcome,
     ) -> LlmCallRecord:
+        llm_response = llm_execution.llm_response
         return LlmCallRecord(
             run_id=run_state.run_id,
             turn_id=turn_id,
             task_id=task.task_id,
             agent_name=task.assigned_agent,
-            provider_name=llm_response.provider_name,
-            model_name=llm_response.model_name,
-            structured_output=llm_response.output,
-            usage=llm_response.usage,
+            provider_name=(
+                llm_response.provider_name if llm_response is not None else self._llm_provider_name
+            ),
+            model_name=(
+                llm_response.model_name if llm_response is not None else self._llm_model_name
+            ),
+            structured_output=llm_execution.output,
+            usage=llm_response.usage if llm_response is not None else LlmUsage(),
             available_tool_names=list_available_tool_names(),
             request_payload={
                 "run_id": run_state.run_id,
@@ -639,10 +646,22 @@ class RunService:
                 "task": task.model_dump(mode="json"),
                 "execution_profile": execution_profile.model_dump(mode="json"),
             },
-            response_payload=llm_response.model_dump(mode="json"),
-            finish_reason=llm_response.finish_reason,
-            latency_ms=llm_response.latency_ms,
-            raw_response_text=llm_response.raw_response_text,
+            response_payload=(
+                llm_response.model_dump(mode="json")
+                if llm_response is not None
+                else {
+                    "fallback_used": llm_execution.fallback_used,
+                    "error_message": llm_execution.error_message,
+                }
+            ),
+            finish_reason=(llm_response.finish_reason if llm_response is not None else "fallback"),
+            latency_ms=llm_response.latency_ms if llm_response is not None else None,
+            error_message=llm_execution.error_message,
+            raw_response_text=(
+                llm_response.raw_response_text if llm_response is not None else None
+            ),
+            attempt_count=llm_execution.attempt_count,
+            fallback_used=llm_execution.fallback_used,
         )
 
     def _find_next_ready_task(

@@ -86,3 +86,13 @@ class LlmTurnResponse(BaseModel):
     finish_reason: str | None = None
     latency_ms: int | None = Field(default=None, ge=0)
     raw_response_text: str | None = None
+
+
+class LlmExecutionOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    output: StructuredTurnOutput
+    llm_response: LlmTurnResponse | None = None
+    error_message: str | None = None
+    fallback_used: bool = False
+    attempt_count: int = Field(default=1, ge=1)
