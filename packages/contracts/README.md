@@ -25,6 +25,10 @@ The Go control plane currently implements the initial run surface:
 - `POST /runs/{run_id}/plan`
 - `GET /runs/{run_id}/plans/latest`
 - `POST /runs/{run_id}/turns/advance`
+- `GET /runs/{run_id}/events`
+- `GET /runs/{run_id}/turns`
+- `GET /runs/{run_id}/tool-calls`
+- `GET /runs/{run_id}/llm-calls`
 
 ## Worker Boundary
 

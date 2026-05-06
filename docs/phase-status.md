@@ -29,6 +29,7 @@ Completed areas:
 - Go-owned run create/list/read endpoints
 - Go-owned deterministic planning and turn advancement
 - Go-owned worker-backed LLM turn advancement
+- Go-owned artifact list endpoints for events, turns, tool calls, and LLM calls
 - private Python agent-worker scaffold
 - shared worker-boundary contracts
 - unit and integration tests for the implemented platform spine
@@ -55,7 +56,8 @@ This repository is in a strong backend MVP state for:
 ## Next practical upgrades
 
 - auth and RBAC
-- port Go list endpoints for events, turns, tool calls, LLM calls, plans, and outputs
+- port verification and finalization into the Go control plane
+- port approvals into the Go control plane
 - observability and tracing
 - richer provider policies
 - LLM-backed planning

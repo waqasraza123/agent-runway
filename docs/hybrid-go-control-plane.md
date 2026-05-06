@@ -17,6 +17,10 @@ The Go service in `apps/api-go` currently owns:
 - `POST /runs/{run_id}/plan`
 - `GET /runs/{run_id}/plans/latest`
 - `POST /runs/{run_id}/turns/advance` in deterministic and worker-backed LLM modes
+- `GET /runs/{run_id}/events`
+- `GET /runs/{run_id}/turns`
+- `GET /runs/{run_id}/tool-calls`
+- `GET /runs/{run_id}/llm-calls`
 
 The Python FastAPI app remains the reference for endpoints that are not listed above.
 
@@ -93,7 +97,7 @@ No Go-native migration system is introduced yet. Alembic remains the migration a
 
 ## Next Implementation Order
 
-1. Port Go read/list endpoints for events, turns, tool calls, LLM calls, and plans.
-2. Port verification and finalization.
+1. Port verification and finalization.
+2. Port approvals.
 3. Add auth/RBAC at the Go API boundary.
 4. Add structured request logging, request IDs, and trace propagation between Go and Python.

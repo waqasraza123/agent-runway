@@ -15,7 +15,8 @@ The next backend architecture is a hybrid Go and Python deployment.
 - Go calls Python through `POST /internal/agent/turn`.
 - Python returns structured execution outcomes and does not mutate run state directly.
 - The Go control plane owns initial run creation, run reads, deterministic planning, deterministic turn advancement, and worker-backed LLM turn advancement.
-- The current Python FastAPI app remains the reference implementation for verification, approvals, finalization, and list/read endpoints that have not yet been ported.
+- The Go control plane exposes persisted workflow artifact reads for events, turns, tool calls, and LLM calls.
+- The current Python FastAPI app remains the reference implementation for verification, approvals, finalization, and endpoints that have not yet been ported.
 
 See `docs/hybrid-go-control-plane.md` for the current Go ownership boundary and migration order.
 

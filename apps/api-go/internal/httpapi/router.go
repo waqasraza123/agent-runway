@@ -30,6 +30,10 @@ func NewRouter(dependencies Dependencies) http.Handler {
 	router.Post("/runs/{run_id}/plan", handler.GeneratePlan)
 	router.Get("/runs/{run_id}/plans/latest", handler.GetLatestPlan)
 	router.Post("/runs/{run_id}/turns/advance", handler.AdvanceTurn)
+	router.Get("/runs/{run_id}/events", handler.ListRunEvents)
+	router.Get("/runs/{run_id}/turns", handler.ListRunTurns)
+	router.Get("/runs/{run_id}/tool-calls", handler.ListRunToolCalls)
+	router.Get("/runs/{run_id}/llm-calls", handler.ListRunLLMCalls)
 
 	return router
 }

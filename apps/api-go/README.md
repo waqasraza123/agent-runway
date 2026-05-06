@@ -9,6 +9,7 @@ Current responsibilities:
 - own deterministic plan generation
 - own deterministic and worker-backed LLM turn advancement
 - persist turns, tool calls, LLM calls, evidence, and events
+- expose persisted events, turns, tool calls, and LLM calls
 - connect to PostgreSQL through `pgx`
 - write run creation events
 - call the private Python agent worker over HTTP
@@ -54,5 +55,9 @@ The current endpoints are:
 - `POST /runs/{run_id}/plan`
 - `GET /runs/{run_id}/plans/latest`
 - `POST /runs/{run_id}/turns/advance`
+- `GET /runs/{run_id}/events`
+- `GET /runs/{run_id}/turns`
+- `GET /runs/{run_id}/tool-calls`
+- `GET /runs/{run_id}/llm-calls`
 
-The next implementation step is to port event, turn, tool-call, and LLM-call list endpoints.
+The next implementation step is to port verification and finalization.
