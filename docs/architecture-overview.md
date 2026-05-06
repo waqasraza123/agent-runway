@@ -17,6 +17,7 @@ The next backend architecture is a hybrid Go and Python deployment.
 - The Go control plane owns initial run creation, run reads, deterministic planning, worker-backed LLM planning, deterministic turn advancement, worker-backed LLM turn advancement, approvals, verification, and finalization.
 - The Go control plane exposes persisted workflow artifact reads for events, turns, tool calls, LLM calls, approvals, verifications, and final outputs.
 - The Go control plane enforces opt-in bearer-token RBAC, durable user/tenant identity, and tenant-scoped run ownership for workflow endpoints.
+- The Go control plane resolves tenant-specific provider routes and checks provider budgets before worker-backed LLM calls.
 - The Go control plane emits structured request logs, persists request IDs plus W3C trace context on run events, propagates both values to the Python worker, and exports OTLP/HTTP spans when configured.
 - The current Python FastAPI app remains the reference implementation for endpoints that have not yet been ported.
 
@@ -48,7 +49,7 @@ The LLM path supports retry and deterministic fallback when provider execution f
 The registry executes deterministic tool adapters and returns structured outputs.
 
 ### Storage layer
-Repositories persist tenants, users, memberships, run ownership, run state, events, approvals, plans, turns, tool calls, verifications, outputs, and LLM call artifacts.
+Repositories persist tenants, users, memberships, run ownership, run state, events, approvals, plans, turns, tool calls, verifications, outputs, LLM call artifacts, and provider usage records.
 
 The platform supports both in-memory and SQL-backed implementations behind the same service boundary.
 

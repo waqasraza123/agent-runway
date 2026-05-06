@@ -118,3 +118,62 @@ Use strict mode for environments where provider output is mandatory:
 EXECUTION_FALLBACK_ENABLED=false
 PLANNING_FALLBACK_ENABLED=false
 ```
+
+## Tenant-Specific Routing
+
+Use `TENANT_PROVIDER_POLICIES_JSON` to override provider, model, retry, timeout, temperature, fallback, and budget behavior for a specific tenant. Tokens still resolve to tenants through `AUTH_TOKEN_PRINCIPALS_JSON`; provider policy is evaluated from the run's durable `tenant_id`.
+
+Example:
+
+```bash
+TENANT_PROVIDER_POLICIES_JSON='[
+  {
+    "tenant_id": "tenant_acme",
+    "planning": {
+      "provider_name": "openai",
+      "model_name": "gpt-4.1-mini",
+      "max_output_tokens": 1800,
+      "max_retries": 1,
+      "fallback_enabled": true
+    },
+    "execution": {
+      "provider_name": "openai",
+      "model_name": "gpt-4.1",
+      "temperature": 0.2,
+      "timeout_seconds": 30,
+      "max_retries": 1,
+      "fallback_enabled": true
+    },
+    "monthly_budget_usd": 250.0,
+    "per_run_budget_usd": 10.0,
+    "budget_mode": "block"
+  }
+]'
+```
+
+Any omitted route field falls back to the global `PLANNING_*` or `LLM_*` setting.
+
+## Budget Controls
+
+The Go API stores provider usage in `provider_usage_records` whenever the worker returns provider usage for planning or turn execution. Each record includes:
+
+- `tenant_id`
+- `run_id`
+- `operation`
+- `provider_name`
+- `model_name`
+- token counts
+- `estimated_cost_usd`
+- full JSON payload
+
+Before an LLM planning or execution call, Go sums the tenant's durable usage ledger:
+
+- `monthly_budget_usd` checks tenant spend since the first day of the current UTC month.
+- `per_run_budget_usd` checks total spend for the current run.
+
+Budget modes:
+
+- `block`: return HTTP `402` before calling the worker when spend is already at or above the configured limit.
+- `warn`: log `provider_budget_limit_reached` and allow the call.
+
+Budget enforcement is intentionally based on already-recorded usage. A single call can exceed the remaining budget if the provider cost is only known after completion; the next provider call is blocked once the ledger is over the limit.

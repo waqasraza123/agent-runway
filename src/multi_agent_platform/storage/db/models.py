@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from multi_agent_platform.storage.db.base import Base
@@ -157,4 +157,26 @@ class RunOutputRow(Base):
     output_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     run_id: Mapped[str] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    payload: Mapped[str] = mapped_column(Text)
+
+
+class ProviderUsageRow(Base):
+    __tablename__ = "provider_usage_records"
+    __table_args__ = (
+        Index("ix_provider_usage_tenant_created_at", "tenant_id", "created_at"),
+        Index("ix_provider_usage_tenant_run_id", "tenant_id", "run_id"),
+        Index("ix_provider_usage_provider_model", "provider_name", "model_name"),
+    )
+
+    usage_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), ForeignKey("tenants.tenant_id"))
+    run_id: Mapped[str] = mapped_column(String(64), ForeignKey("run_states.run_id"), index=True)
+    operation: Mapped[str] = mapped_column(String(32), index=True)
+    provider_name: Mapped[str] = mapped_column(String(64))
+    model_name: Mapped[str] = mapped_column(String(128))
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    estimated_cost_usd: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     payload: Mapped[str] = mapped_column(Text)

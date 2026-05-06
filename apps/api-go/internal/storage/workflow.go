@@ -12,6 +12,7 @@ func (store *Store) SavePlanAndRunState(
 	plan domain.RunPlanReport,
 	runState domain.RunStateSnapshot,
 	events []domain.RunEventRecord,
+	providerUsage *domain.ProviderUsageRecord,
 ) (domain.RunPlanReport, error) {
 	payload, err := json.Marshal(plan)
 	if err != nil {
@@ -48,6 +49,11 @@ func (store *Store) SavePlanAndRunState(
 	}
 	for _, eventRecord := range events {
 		if err := appendEventInTx(ctx, tx, eventRecord); err != nil {
+			return domain.RunPlanReport{}, err
+		}
+	}
+	if providerUsage != nil {
+		if err := insertProviderUsageInTx(ctx, tx, *providerUsage); err != nil {
 			return domain.RunPlanReport{}, err
 		}
 	}
@@ -89,6 +95,7 @@ func (store *Store) SaveTurnAdvance(
 	turn domain.RunTurnRecord,
 	toolCalls []domain.RunToolCallRecord,
 	llmCalls []domain.LLMCallRecord,
+	providerUsage []domain.ProviderUsageRecord,
 	events []domain.RunEventRecord,
 ) (domain.RunTurnRecord, domain.RunStateSnapshot, error) {
 	tx, err := store.pool.Begin(ctx)
@@ -184,6 +191,11 @@ func (store *Store) SaveTurnAdvance(
 
 	for _, eventRecord := range events {
 		if err := appendEventInTx(ctx, tx, eventRecord); err != nil {
+			return domain.RunTurnRecord{}, domain.RunStateSnapshot{}, err
+		}
+	}
+	for _, usage := range providerUsage {
+		if err := insertProviderUsageInTx(ctx, tx, usage); err != nil {
 			return domain.RunTurnRecord{}, domain.RunStateSnapshot{}, err
 		}
 	}

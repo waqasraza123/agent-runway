@@ -17,8 +17,9 @@ var availableToolNames = []string{
 }
 
 type turnExecutionOutcome struct {
-	Result  domain.TurnExecutionResult
-	LLMCall *domain.LLMCallRecord
+	Result        domain.TurnExecutionResult
+	LLMCall       *domain.LLMCallRecord
+	ProviderUsage *domain.ProviderUsageRecord
 }
 
 func (handler Handler) executeTurn(
@@ -31,6 +32,16 @@ func (handler Handler) executeTurn(
 		return turnExecutionOutcome{
 			Result: domain.ExecuteDeterministicTurn(runState, task),
 		}, nil
+	}
+	policy := handler.providerPolicyForRun(runState)
+	route := policy.Execution
+	if err := handler.enforceProviderBudget(
+		ctx,
+		policy,
+		runState.RunID,
+		providerPolicyOperationExecution,
+	); err != nil {
+		return turnExecutionOutcome{}, err
 	}
 
 	workerRequest := contracts.LLMWorkerTurnRequest{
@@ -47,27 +58,18 @@ func (handler Handler) executeTurn(
 			RiskLevel:          task.RiskLevel,
 			AttemptCount:       task.AttemptCount,
 		},
-		ExecutionProfile: contracts.AgentExecutionProfile{
-			AgentName:       task.AssignedAgent,
-			Backend:         contracts.ExecutionBackendLLM,
-			LLMProviderName: &handler.dependencies.Settings.LLMProviderName,
-			ModelName:       &handler.dependencies.Settings.LLMModelName,
-			Temperature:     handler.dependencies.Settings.LLMTemperature,
-			MaxOutputTokens: handler.dependencies.Settings.LLMMaxOutputTokens,
-			TimeoutSeconds:  handler.dependencies.Settings.LLMTimeoutSeconds,
-			MaxRetries:      handler.dependencies.Settings.LLMMaxRetries,
-		},
+		ExecutionProfile: route.executionProfile(task.AssignedAgent),
 		AvailableToolNames: availableToolNames,
 	}
 
 	workerOutcome, err := handler.dependencies.WorkerClient.ExecuteTurn(ctx, workerRequest)
 	if err != nil {
-		if !handler.dependencies.Settings.ExecutionFallbackEnabled {
+		if !route.FallbackEnabled {
 			return turnExecutionOutcome{}, err
 		}
-		return handler.buildWorkerFallbackOutcome(runState, task, turnID, err.Error())
+		return handler.buildWorkerFallbackOutcome(runState, task, turnID, route, err.Error())
 	}
-	if workerOutcome.FallbackUsed && !handler.dependencies.Settings.ExecutionFallbackEnabled {
+	if workerOutcome.FallbackUsed && !route.FallbackEnabled {
 		if workerOutcome.ErrorMessage != nil {
 			return turnExecutionOutcome{}, fmt.Errorf("%s", *workerOutcome.ErrorMessage)
 		}
@@ -79,8 +81,8 @@ func (handler Handler) executeTurn(
 		PlannedToolCalls: mapPlannedToolCalls(workerOutcome.Output.PlannedToolCalls),
 	}
 
-	providerName := handler.dependencies.Settings.LLMProviderName
-	modelName := handler.dependencies.Settings.LLMModelName
+	providerName := route.ProviderName
+	modelName := route.ModelName
 	var finishReason *string
 	var latencyMS *int
 	var rawResponseText *string
@@ -138,9 +140,15 @@ func (handler Handler) executeTurn(
 		return turnExecutionOutcome{}, err
 	}
 
+	providerUsage, err := buildExecutionProviderUsage(runState, route, workerOutcome)
+	if err != nil {
+		return turnExecutionOutcome{}, err
+	}
+
 	return turnExecutionOutcome{
-		Result:  turnResult,
-		LLMCall: &llmCall,
+		Result:        turnResult,
+		LLMCall:       &llmCall,
+		ProviderUsage: providerUsage,
 	}, nil
 }
 
@@ -148,6 +156,7 @@ func (handler Handler) buildWorkerFallbackOutcome(
 	runState domain.RunStateSnapshot,
 	task domain.TaskRecord,
 	turnID string,
+	route resolvedProviderRoute,
 	errorMessage string,
 ) (turnExecutionOutcome, error) {
 	turnResult := domain.ExecuteDeterministicTurn(runState, task)
@@ -156,8 +165,8 @@ func (handler Handler) buildWorkerFallbackOutcome(
 		runState.RunID,
 		turnID,
 		task,
-		handler.dependencies.Settings.LLMProviderName,
-		handler.dependencies.Settings.LLMModelName,
+		route.ProviderName,
+		route.ModelName,
 		domain.StructuredTurnOutput{
 			Summary:          turnResult.Summary,
 			PlannedToolCalls: turnResult.PlannedToolCalls,
@@ -168,8 +177,8 @@ func (handler Handler) buildWorkerFallbackOutcome(
 			"run_id":               runState.RunID,
 			"task_id":              task.TaskID,
 			"agent_name":           task.AssignedAgent,
-			"llm_provider_name":    handler.dependencies.Settings.LLMProviderName,
-			"model_name":           handler.dependencies.Settings.LLMModelName,
+			"llm_provider_name":    route.ProviderName,
+			"model_name":           route.ModelName,
 			"available_tool_names": availableToolNames,
 		},
 		map[string]any{
@@ -190,6 +199,74 @@ func (handler Handler) buildWorkerFallbackOutcome(
 		Result:  turnResult,
 		LLMCall: &llmCall,
 	}, nil
+}
+
+func buildPlanningProviderUsage(
+	runState domain.RunStateSnapshot,
+	route resolvedProviderRoute,
+	workerOutcome contracts.LLMPlanningOutcome,
+) (*domain.ProviderUsageRecord, error) {
+	if workerOutcome.LLMResponse == nil {
+		return nil, nil
+	}
+	usage := domain.LLMUsage{
+		InputTokens:      workerOutcome.LLMResponse.Usage.InputTokens,
+		OutputTokens:     workerOutcome.LLMResponse.Usage.OutputTokens,
+		TotalTokens:      workerOutcome.LLMResponse.Usage.TotalTokens,
+		EstimatedCostUSD: workerOutcome.LLMResponse.Usage.EstimatedCostUSD,
+	}
+	record, err := domain.NewProviderUsageRecord(
+		runState.TenantID,
+		runState.RunID,
+		domain.ProviderUsageOperationPlanning,
+		workerOutcome.LLMResponse.ProviderName,
+		workerOutcome.LLMResponse.ModelName,
+		usage,
+		map[string]any{
+			"configured_provider_name": route.ProviderName,
+			"configured_model_name":    route.ModelName,
+			"fallback_used":            workerOutcome.FallbackUsed,
+			"attempt_count":            workerOutcome.AttemptCount,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
+func buildExecutionProviderUsage(
+	runState domain.RunStateSnapshot,
+	route resolvedProviderRoute,
+	workerOutcome contracts.LLMExecutionOutcome,
+) (*domain.ProviderUsageRecord, error) {
+	if workerOutcome.LLMResponse == nil {
+		return nil, nil
+	}
+	usage := domain.LLMUsage{
+		InputTokens:      workerOutcome.LLMResponse.Usage.InputTokens,
+		OutputTokens:     workerOutcome.LLMResponse.Usage.OutputTokens,
+		TotalTokens:      workerOutcome.LLMResponse.Usage.TotalTokens,
+		EstimatedCostUSD: workerOutcome.LLMResponse.Usage.EstimatedCostUSD,
+	}
+	record, err := domain.NewProviderUsageRecord(
+		runState.TenantID,
+		runState.RunID,
+		domain.ProviderUsageOperationExecution,
+		workerOutcome.LLMResponse.ProviderName,
+		workerOutcome.LLMResponse.ModelName,
+		usage,
+		map[string]any{
+			"configured_provider_name": route.ProviderName,
+			"configured_model_name":    route.ModelName,
+			"fallback_used":            workerOutcome.FallbackUsed,
+			"attempt_count":            workerOutcome.AttemptCount,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &record, nil
 }
 
 func mapPlannedToolCalls(items []contracts.PlannedToolCall) []domain.PlannedToolCall {

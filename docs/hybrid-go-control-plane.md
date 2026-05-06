@@ -64,6 +64,7 @@ Go writes to the existing Alembic-managed tables:
 - `run_approvals`
 - `run_verifications`
 - `run_outputs`
+- `provider_usage_records`
 
 The tables continue to store full JSON payloads in the same model shape used by Python. Go also maintains indexed columns such as `status`, `workflow_type`, `created_at`, `task_id`, `turn_id`, `request_id`, and `traceparent`.
 
@@ -116,6 +117,8 @@ Every Go-created event is stamped with the request metadata from the API boundar
 - `request_id`
 - `traceparent`
 
+Provider usage is persisted when worker-backed planning or execution returns token/cost metadata. The ledger powers tenant monthly and per-run budget checks before future provider calls.
+
 ## Deterministic Execution
 
 The first Go execution path intentionally matches the existing Python deterministic behavior:
@@ -156,7 +159,7 @@ No Go-native migration runner is introduced yet. Alembic remains the migration a
 
 ## Next Implementation Order
 
-1. Add richer provider routing, budgets, and tenant-specific model policy.
-2. Add worker-side spans for provider calls and execution turns.
-3. Replace static token credentials with signed JWT validation.
+1. Add worker-side spans for provider calls and execution turns.
+2. Replace static token credentials with signed JWT validation.
+3. Add operator-facing provider usage and budget reporting.
 4. Port the remaining manual task/evidence mutation endpoints or intentionally deprecate them behind the Go workflow API.

@@ -40,6 +40,8 @@ Completed areas:
 - Go-owned structured request logs and Python worker trace propagation
 - Go-owned durable request metadata on run events
 - Go-owned OTLP/HTTP server span export
+- Go-owned tenant-specific provider routing and model policy
+- Go-owned provider usage ledger and budget guards
 - private Python agent-worker scaffold
 - shared worker-boundary contracts
 - unit and integration tests for the implemented platform spine
@@ -65,7 +67,6 @@ This repository is in a strong backend MVP state for:
 
 ## Next practical upgrades
 
-- richer provider routing, budgets, and tenant-specific model policy
 - worker-side spans for provider calls and execution turns
 - signed JWT validation for external identity providers
 - frontend operator console

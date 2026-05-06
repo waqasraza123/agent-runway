@@ -234,7 +234,10 @@ PLANNING_PROVIDER_NAME=openai
 PLANNING_MODEL_NAME=fake-model
 PLANNING_MAX_RETRIES=0
 PLANNING_FALLBACK_ENABLED=true
+TENANT_PROVIDER_POLICIES_JSON='[{"tenant_id":"tenant_acme","execution":{"provider_name":"openai","model_name":"gpt-4.1"},"monthly_budget_usd":250,"per_run_budget_usd":10,"budget_mode":"block"}]'
 ```
+
+`TENANT_PROVIDER_POLICIES_JSON` is optional. When set, it overrides planning/execution provider routes by durable `tenant_id` and enables monthly or per-run budget checks from the provider usage ledger.
 
 Go API auth:
 
@@ -356,7 +359,7 @@ make smoke-llm-fake
 
 Agent Runway is backend-MVP ready for demos, architecture walkthroughs, portfolio presentation, and further hardening.
 
-The next production upgrades are provider routing with budget policy, signed JWT validation, worker-side spans, and a fuller operator console.
+The next production upgrades are signed JWT validation, worker-side spans, and a fuller operator console.
 
 ## License
 

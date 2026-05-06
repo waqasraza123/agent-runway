@@ -24,8 +24,12 @@ func (handler Handler) GeneratePlan(response http.ResponseWriter, request *http.
 		return
 	}
 
-	plan, err := handler.buildRunPlan(request.Context(), runState)
+	plan, providerUsage, err := handler.buildRunPlan(request.Context(), runState)
 	if err != nil {
+		if isProviderBudgetError(err) {
+			writeError(response, http.StatusPaymentRequired, err.Error())
+			return
+		}
 		handler.logError("build plan failed", err)
 		writeError(response, http.StatusInternalServerError, "Failed to build run plan")
 		return
@@ -70,6 +74,7 @@ func (handler Handler) GeneratePlan(response http.ResponseWriter, request *http.
 		plan,
 		updatedRunState,
 		[]domain.RunEventRecord{planEvent, tasksEvent},
+		providerUsage,
 	)
 	if err != nil {
 		handler.logError("save plan failed", err)
@@ -83,15 +88,27 @@ func (handler Handler) GeneratePlan(response http.ResponseWriter, request *http.
 func (handler Handler) buildRunPlan(
 	ctx context.Context,
 	runState domain.RunStateSnapshot,
-) (domain.RunPlanReport, error) {
+) (domain.RunPlanReport, *domain.ProviderUsageRecord, error) {
 	if handler.dependencies.Settings.PlanningBackend != "llm" {
-		return domain.BuildRunPlan(runState)
+		plan, err := domain.BuildRunPlan(runState)
+		return plan, nil, err
+	}
+	policy := handler.providerPolicyForRun(runState)
+	route := policy.Planning
+	if err := handler.enforceProviderBudget(
+		ctx,
+		policy,
+		runState.RunID,
+		providerPolicyOperationPlanning,
+	); err != nil {
+		return domain.RunPlanReport{}, nil, err
 	}
 	if handler.dependencies.WorkerClient == nil {
-		if handler.dependencies.Settings.PlanningFallbackEnabled {
-			return domain.BuildRunPlan(runState)
+		if route.FallbackEnabled {
+			plan, err := domain.BuildRunPlan(runState)
+			return plan, nil, err
 		}
-		return domain.RunPlanReport{}, fmt.Errorf("planning backend is llm but worker client is not configured")
+		return domain.RunPlanReport{}, nil, fmt.Errorf("planning backend is llm but worker client is not configured")
 	}
 
 	workerOutcome, err := handler.dependencies.WorkerClient.GeneratePlan(
@@ -100,37 +117,38 @@ func (handler Handler) buildRunPlan(
 			RunID:        runState.RunID,
 			UserGoal:     runState.UserGoal,
 			WorkflowType: string(runState.WorkflowType),
-			ExecutionProfile: contracts.AgentExecutionProfile{
-				AgentName:       "planner",
-				Backend:         contracts.ExecutionBackendLLM,
-				LLMProviderName: &handler.dependencies.Settings.PlanningProviderName,
-				ModelName:       &handler.dependencies.Settings.PlanningModelName,
-				Temperature:     handler.dependencies.Settings.PlanningTemperature,
-				MaxOutputTokens: handler.dependencies.Settings.PlanningMaxOutputTokens,
-				TimeoutSeconds:  handler.dependencies.Settings.PlanningTimeoutSeconds,
-				MaxRetries:      handler.dependencies.Settings.PlanningMaxRetries,
-			},
+			ExecutionProfile: route.executionProfile("planner"),
 		},
 	)
 	if err != nil {
-		if handler.dependencies.Settings.PlanningFallbackEnabled {
-			return domain.BuildRunPlan(runState)
+		if route.FallbackEnabled {
+			plan, buildErr := domain.BuildRunPlan(runState)
+			return plan, nil, buildErr
 		}
-		return domain.RunPlanReport{}, err
+		return domain.RunPlanReport{}, nil, err
 	}
-	if workerOutcome.FallbackUsed && !handler.dependencies.Settings.PlanningFallbackEnabled {
+	if workerOutcome.FallbackUsed && !route.FallbackEnabled {
 		if workerOutcome.ErrorMessage != nil {
-			return domain.RunPlanReport{}, fmt.Errorf("%s", *workerOutcome.ErrorMessage)
+			return domain.RunPlanReport{}, nil, fmt.Errorf("%s", *workerOutcome.ErrorMessage)
 		}
-		return domain.RunPlanReport{}, fmt.Errorf("LLM planning returned fallback output")
+		return domain.RunPlanReport{}, nil, fmt.Errorf("LLM planning returned fallback output")
 	}
 
-	return domain.NewRunPlanFromPlannedTasks(
+	plan, err := domain.NewRunPlanFromPlannedTasks(
 		runState,
 		workerOutcome.Output.TemplateName,
 		workerOutcome.Output.Summary,
 		mapWorkerPlannedTasks(workerOutcome.Output.Tasks),
 	)
+	if err != nil {
+		return domain.RunPlanReport{}, nil, err
+	}
+
+	providerUsage, err := buildPlanningProviderUsage(runState, route, workerOutcome)
+	if err != nil {
+		return domain.RunPlanReport{}, nil, err
+	}
+	return plan, providerUsage, nil
 }
 
 func mapWorkerPlannedTasks(items []contracts.PlannedTask) []domain.PlannedTask {
@@ -205,6 +223,10 @@ func (handler Handler) AdvanceTurn(response http.ResponseWriter, request *http.R
 	}
 	executionOutcome, err := handler.executeTurn(request.Context(), runState, *activeTask, turnID)
 	if err != nil {
+		if isProviderBudgetError(err) {
+			writeError(response, http.StatusPaymentRequired, err.Error())
+			return
+		}
 		handler.logError("execute turn failed", err)
 		writeError(response, http.StatusInternalServerError, "Failed to execute turn")
 		return
@@ -212,8 +234,12 @@ func (handler Handler) AdvanceTurn(response http.ResponseWriter, request *http.R
 	turnResult := executionOutcome.Result
 	toolCalls := make([]domain.RunToolCallRecord, 0, len(turnResult.PlannedToolCalls))
 	llmCalls := make([]domain.LLMCallRecord, 0, 1)
+	providerUsage := make([]domain.ProviderUsageRecord, 0, 1)
 	if executionOutcome.LLMCall != nil {
 		llmCalls = append(llmCalls, *executionOutcome.LLMCall)
+	}
+	if executionOutcome.ProviderUsage != nil {
+		providerUsage = append(providerUsage, *executionOutcome.ProviderUsage)
 	}
 	toolCallIDs := make([]string, 0, len(turnResult.PlannedToolCalls))
 	evidenceIDs := make([]string, 0, len(turnResult.PlannedToolCalls))
@@ -316,6 +342,7 @@ func (handler Handler) AdvanceTurn(response http.ResponseWriter, request *http.R
 		turn,
 		toolCalls,
 		llmCalls,
+		providerUsage,
 		events,
 	)
 	if err != nil {

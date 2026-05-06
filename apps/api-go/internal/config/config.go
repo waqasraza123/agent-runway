@@ -15,6 +15,25 @@ type AuthTokenPrincipal struct {
 	DisplayName string `json:"display_name"`
 }
 
+type ProviderRouteConfig struct {
+	ProviderName    string   `json:"provider_name"`
+	ModelName       string   `json:"model_name"`
+	Temperature     *float64 `json:"temperature"`
+	MaxOutputTokens *int     `json:"max_output_tokens"`
+	TimeoutSeconds  *float64 `json:"timeout_seconds"`
+	MaxRetries      *int     `json:"max_retries"`
+	FallbackEnabled *bool    `json:"fallback_enabled"`
+}
+
+type TenantProviderPolicyConfig struct {
+	TenantID          string              `json:"tenant_id"`
+	Planning          ProviderRouteConfig `json:"planning"`
+	Execution         ProviderRouteConfig `json:"execution"`
+	MonthlyBudgetUSD *float64          `json:"monthly_budget_usd"`
+	PerRunBudgetUSD  *float64          `json:"per_run_budget_usd"`
+	BudgetMode       string             `json:"budget_mode"`
+}
+
 type Settings struct {
 	Host                     string
 	Port                     string
@@ -49,6 +68,7 @@ type Settings struct {
 	OTLPQueueSize            int
 	ServiceName              string
 	ServiceEnvironment       string
+	TenantProviderPolicies   []TenantProviderPolicyConfig
 }
 
 func Load() Settings {
@@ -86,6 +106,7 @@ func Load() Settings {
 		OTLPQueueSize:            readInt("OTEL_EXPORTER_OTLP_QUEUE_SIZE", 256),
 		ServiceName:              readEnv("OTEL_SERVICE_NAME", "agent-runway-api-go"),
 		ServiceEnvironment:       readEnv("OTEL_RESOURCE_ENVIRONMENT", readEnv("DEPLOY_ENVIRONMENT", "local")),
+		TenantProviderPolicies:   readTenantProviderPolicies("TENANT_PROVIDER_POLICIES_JSON"),
 	}
 }
 
@@ -242,4 +263,32 @@ func readAuthTokenPrincipals(name string) []AuthTokenPrincipal {
 		}
 	}
 	return normalized
+}
+
+func readTenantProviderPolicies(name string) []TenantProviderPolicyConfig {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return []TenantProviderPolicyConfig{}
+	}
+	var policies []TenantProviderPolicyConfig
+	if err := json.Unmarshal([]byte(value), &policies); err != nil {
+		return []TenantProviderPolicyConfig{}
+	}
+	normalized := make([]TenantProviderPolicyConfig, 0, len(policies))
+	for _, policy := range policies {
+		policy.TenantID = strings.TrimSpace(policy.TenantID)
+		policy.Planning = normalizeProviderRoute(policy.Planning)
+		policy.Execution = normalizeProviderRoute(policy.Execution)
+		policy.BudgetMode = strings.ToLower(strings.TrimSpace(policy.BudgetMode))
+		if policy.TenantID != "" {
+			normalized = append(normalized, policy)
+		}
+	}
+	return normalized
+}
+
+func normalizeProviderRoute(route ProviderRouteConfig) ProviderRouteConfig {
+	route.ProviderName = strings.TrimSpace(route.ProviderName)
+	route.ModelName = strings.TrimSpace(route.ModelName)
+	return route
 }
