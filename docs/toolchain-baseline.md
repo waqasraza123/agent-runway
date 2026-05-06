@@ -9,6 +9,8 @@
 - pytest
 - FastAPI
 - SQLAlchemy
+- Alembic
+- Go 1.22 for the hybrid control-plane service
 
 ## Standard commands
 
@@ -22,7 +24,15 @@ Quality gates:
     uv run ruff format --check .
     uv run mypy src tests
     uv run pytest -q
+    make migration-check
+    make export-openapi
     make check
+
+Hybrid commands:
+
+    make agent-worker-dev
+    make api-go-dev
+    make hybrid-up
 
 ## Storage modes
 
@@ -32,6 +42,13 @@ SQL mode is enabled with:
 
     STORAGE_BACKEND=sql
     DATABASE_URL=sqlite:///./.workdir/multi_agent_platform.db
+    make migrate
+
+PostgreSQL uses the same migration path:
+
+    STORAGE_BACKEND=sql
+    DATABASE_URL=postgresql+psycopg://user:password@host:5432/database
+    make migrate
 
 ## Notes
 

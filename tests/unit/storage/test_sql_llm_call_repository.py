@@ -2,7 +2,8 @@ from pathlib import Path
 
 from multi_agent_platform.contracts.llm_calls import LlmCallListQuery, LlmCallRecord
 from multi_agent_platform.contracts.turn_execution import LlmUsage, StructuredTurnOutput
-from multi_agent_platform.storage.db.session import ensure_database_schema, get_session_factory
+from multi_agent_platform.storage.db.migrations import migrate_database_schema
+from multi_agent_platform.storage.db.session import get_session_factory
 from multi_agent_platform.storage.sql_repository import SqlAlchemyRunLlmCallRepository
 from multi_agent_platform.tools.registry import PlannedToolCall
 
@@ -46,7 +47,7 @@ def build_record(
 
 def test_sql_llm_call_repository_saves_gets_and_lists_records(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'llm_calls.db'}"
-    ensure_database_schema(database_url)
+    migrate_database_schema(database_url)
     repository = SqlAlchemyRunLlmCallRepository(get_session_factory(database_url))
 
     first_record = repository.save(build_record(turn_id="turn_1", task_id="task_1"))

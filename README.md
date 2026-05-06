@@ -1,152 +1,274 @@
 # Agent Runway
 
-AI workflow automation engine for auditable business processes, with deterministic planning, provider-backed turn execution, tool calls, approvals, verification, final outputs, and switchable storage backends.
+Agent Runway is a backend-first execution platform for auditable AI workflows. It turns a business goal into a tracked run, creates a plan, advances execution through deterministic or provider-backed agent turns, records tool calls and evidence, verifies completion, and produces a final output.
 
-## Current status
+It is designed for teams that need AI workflow automation with traceability instead of one-off chat responses.
 
-Implemented and working:
+## What It Does
 
-- run creation and listing
-- deterministic plan generation
-- task registration and lifecycle
-- deterministic and provider-backed turn advancement
-- deterministic fallback when LLM execution fails
-- deterministic tool call execution and storage
-- evidence recording
-- approval request and decision flow
-- verification reports
-- final output synthesis
-- persisted LLM call artifacts and usage records
-- in-memory storage backend
-- SQL-backed durable storage backend
-- FastAPI surface for the execution workflow
-- unit and integration test coverage for the current platform spine
+- Creates and tracks workflow runs from a user goal.
+- Generates deterministic task plans for repeatable execution.
+- Advances work through deterministic or LLM-backed turns.
+- Executes registered tools and records structured tool-call artifacts.
+- Stores events, turns, approvals, verifications, outputs, and LLM call records.
+- Supports human approval checkpoints.
+- Produces verification reports before final output synthesis.
+- Exposes the workflow through a FastAPI API and a lightweight browser console.
 
-## Repository structure
+## Product Use Cases
 
-- `src/multi_agent_platform/api` for API app, routes, and dependency wiring
-- `src/multi_agent_platform/application` for service orchestration and response builders
-- `src/multi_agent_platform/contracts` for request, response, and domain contracts
-- `src/multi_agent_platform/orchestration` for run state transitions
-- `src/multi_agent_platform/planning` for deterministic plan generation
-- `src/multi_agent_platform/agents` for deterministic and provider-backed execution
-- `src/multi_agent_platform/tools` for deterministic tool execution
-- `src/multi_agent_platform/storage` for in-memory and SQL persistence
-- `src/multi_agent_platform/config` for runtime settings
-- `tests/unit` for unit coverage
-- `tests/integration` for integration coverage
+Agent Runway is useful for workflow automation that needs a durable audit trail:
 
-## Storage backends
+- technical planning and delivery breakdowns
+- vendor or proposal analysis
+- research workflows with evidence capture
+- operational checklists with approval gates
+- AI-assisted decision support where each step must be inspectable
 
-Supported storage modes:
+## Execution Flow
 
-- `STORAGE_BACKEND=memory`
-- `STORAGE_BACKEND=sql`
+1. Create a run from a business goal.
+2. Generate the run plan.
+3. Advance turns until planned tasks are completed.
+4. Record tool calls, evidence, events, and LLM call artifacts.
+5. Request and resolve approvals when needed.
+6. Verify the run.
+7. Finalize the output.
 
-Main SQL setting:
-
-- `DATABASE_URL=sqlite:///./.workdir/multi_agent_platform.db`
-
-## Execution backends
-
-Supported execution modes:
-
-- `EXECUTION_BACKEND=deterministic`
-- `EXECUTION_BACKEND=llm`
-
-When `EXECUTION_BACKEND=llm`, supported providers are:
-
-- `LLM_PROVIDER_NAME=fake`
-- `LLM_PROVIDER_NAME=openai`
-
-Additional LLM settings:
-
-- `LLM_MODEL_NAME=fake-model`
-- `LLM_API_BASE_URL=https://api.openai.com/v1`
-- `LLM_API_KEY=...` required for the OpenAI compatible provider
-
-## API highlights
+## API Highlights
 
 Key workflow endpoints:
 
 - `POST /runs`
+- `GET /runs`
+- `GET /runs/{run_id}`
+- `GET /runs/{run_id}/state`
 - `POST /runs/{run_id}/plan`
 - `POST /runs/{run_id}/turns/advance`
+- `GET /runs/{run_id}/turns`
+- `GET /runs/{run_id}/events`
 - `GET /runs/{run_id}/tool-calls`
 - `GET /runs/{run_id}/llm-calls`
+- `POST /runs/{run_id}/approvals`
 - `POST /runs/{run_id}/verify`
 - `POST /runs/{run_id}/finalize`
 - `GET /runs/{run_id}/outputs/latest`
 
-## Local setup
+FastAPI also exposes interactive API docs at `/docs` when the service is running.
 
-Bootstrap:
+## Run Locally
 
-    uv sync --group dev
+Install dependencies:
 
-Run the main quality gate:
+```bash
+uv sync --group dev
+```
 
-    make check
+Run the API and browser console:
 
-Run the full local release gate:
+```bash
+uv run uvicorn multi_agent_platform.main:app --reload
+```
 
-    make release-check
+Open:
 
-Run the API locally:
+```text
+http://127.0.0.1:8000
+```
 
-    uv run uvicorn multi_agent_platform.main:app --reload
+Run the quality gate:
 
-## Smoke flows
+```bash
+make check
+```
 
-Deterministic memory mode:
+Run the release smoke checks:
 
-    make smoke-memory
+```bash
+make release-check
+```
 
-Durable SQL mode:
+## Hybrid Go And Python Backend
 
-    make smoke-sql
+Agent Runway is moving toward a hybrid backend:
 
-LLM fake-provider mode:
+- Go control plane in `apps/api-go`
+- Python agent worker in `services/agent_worker`
+- shared contracts in `packages/contracts`
+- local hybrid runtime in `infra/docker`
 
-    make smoke-llm-fake
+In this model, Go owns the public API, database access, orchestration, and run state transitions. Python owns LLM/provider execution and returns structured turn outcomes over a private internal HTTP API.
 
-## Production-readiness notes
+Run the Python worker locally:
 
-This repository now has:
+```bash
+make agent-worker-dev
+```
 
-- strict lint, typecheck, and test gates
-- durable SQL storage support
-- release-check smoke validation
-- provider-backed LLM execution with persisted call records
-- repository metadata and community health files
+Run the Go control plane locally:
 
-Still intentionally out of scope:
+```bash
+make api-go-dev
+```
 
-- Alembic migrations
-- PostgreSQL deployment profile
-- authentication and authorization
-- async job processing
-- streaming provider responses
-- advanced provider auth and rate-limit policy
-- observability stack
-- distributed workers
-- frontend operator console
+Run both services with Postgres:
 
-## Community files
+```bash
+make hybrid-up
+```
 
-- `LICENSE`
-- `CHANGELOG.md`
-- `CONTRIBUTING.md`
-- `CODE_OF_CONDUCT.md`
-- `SECURITY.md`
+Export the current FastAPI OpenAPI contract:
 
-## Next practical upgrades
+```bash
+make export-openapi
+```
 
-- Alembic migrations and schema versioning
-- PostgreSQL deployment profile
-- richer agent execution policies
-- more provider adapters
-- LLM-backed planning
-- authentication and RBAC
-- structured logging and tracing
-- frontend operator console
+The Go toolchain is required for `make api-go-dev`. After installing Go, run this once from `apps/api-go` to resolve module checksums:
+
+```bash
+go mod tidy
+```
+
+## Configuration
+
+Storage backends:
+
+```bash
+STORAGE_BACKEND=memory
+STORAGE_BACKEND=sql
+```
+
+Default SQL database:
+
+```bash
+DATABASE_URL=sqlite:///./.workdir/multi_agent_platform.db
+```
+
+Run migrations before using SQL storage:
+
+```bash
+make migrate
+```
+
+For PostgreSQL, install the same app with a PostgreSQL URL:
+
+```bash
+STORAGE_BACKEND=sql
+DATABASE_URL=postgresql+psycopg://user:password@host:5432/database
+make migrate
+```
+
+Execution backends:
+
+```bash
+EXECUTION_BACKEND=deterministic
+EXECUTION_BACKEND=llm
+```
+
+LLM provider settings:
+
+```bash
+LLM_PROVIDER_NAME=fake
+LLM_PROVIDER_NAME=openai
+LLM_MODEL_NAME=fake-model
+LLM_API_BASE_URL=https://api.openai.com/v1
+LLM_API_KEY=...
+```
+
+`LLM_API_KEY` is required when `LLM_PROVIDER_NAME=openai`.
+
+## Deploy On Render
+
+Use Render as a Python web service.
+
+1. Push this repository to GitHub, GitLab, or Bitbucket.
+2. In Render, create a new **Web Service** from the repository.
+3. Set the runtime to **Python 3**.
+4. Set the build command:
+
+```bash
+uv sync --frozen --no-dev
+```
+
+5. Set the start command:
+
+```bash
+uv run uvicorn multi_agent_platform.main:app --host 0.0.0.0 --port $PORT
+```
+
+6. Add environment variables:
+
+```bash
+PYTHON_VERSION=3.12.11
+STORAGE_BACKEND=memory
+EXECUTION_BACKEND=deterministic
+LLM_PROVIDER_NAME=fake
+LLM_MODEL_NAME=fake-model
+```
+
+7. Deploy the service.
+8. After deploy, open the Render URL. The browser console loads at `/`, and the API docs load at `/docs`.
+
+For an LLM-backed demo, change the execution variables:
+
+```bash
+EXECUTION_BACKEND=llm
+LLM_PROVIDER_NAME=openai
+LLM_MODEL_NAME=<your-model-name>
+LLM_API_BASE_URL=https://api.openai.com/v1
+LLM_API_KEY=<your-api-key>
+```
+
+Storage note: use `STORAGE_BACKEND=memory` for the fastest Render demo. Use PostgreSQL for durable Render data.
+
+For durable Render data, create a Render PostgreSQL database and set:
+
+```bash
+STORAGE_BACKEND=sql
+DATABASE_URL=<your-render-postgres-url>
+```
+
+Then run migrations as a Render pre-deploy command or one-off shell command:
+
+```bash
+uv run alembic upgrade head
+```
+
+Do not use the default SQLite URL for production Render data.
+
+## Smoke Flows
+
+Run the built-in smoke flows locally:
+
+```bash
+make smoke-memory
+make smoke-sql
+make smoke-llm-fake
+```
+
+## Repository Structure
+
+- `apps/api-go` contains the Go control-plane service.
+- `services/agent_worker` contains the private Python LLM/agent worker.
+- `packages/contracts` contains shared API and worker-boundary contracts.
+- `infra/docker` contains local hybrid runtime wiring.
+- `src/multi_agent_platform/api` exposes the FastAPI app and routes.
+- `src/multi_agent_platform/application` coordinates workflow services.
+- `src/multi_agent_platform/contracts` defines request, response, and domain models.
+- `src/multi_agent_platform/orchestration` owns run state transitions.
+- `src/multi_agent_platform/planning` generates deterministic plans.
+- `src/multi_agent_platform/agents` contains deterministic and provider-backed execution.
+- `src/multi_agent_platform/tools` contains deterministic tool execution.
+- `src/multi_agent_platform/storage` contains memory and SQL repositories.
+- `src/multi_agent_platform/web` contains the lightweight browser console.
+- `tests/unit` and `tests/integration` cover the implemented platform spine.
+
+## Current Production Notes
+
+Agent Runway is backend-MVP ready for demos, architecture walkthroughs, portfolio presentation, and further hardening.
+
+The next production upgrades are authentication and RBAC, observability, richer provider policies, and a fuller operator console.
+
+## License
+
+MIT

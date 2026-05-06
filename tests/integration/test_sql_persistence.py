@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from multi_agent_platform.api.dependencies import reset_api_state
 from multi_agent_platform.main import app
+from multi_agent_platform.storage.db.migrations import migrate_database_schema
 
 
 @pytest.fixture
@@ -17,6 +18,7 @@ def configure_sql_storage(
     database_url = f"sqlite:///{database_file}"
     monkeypatch.setenv("STORAGE_BACKEND", "sql")
     monkeypatch.setenv("DATABASE_URL", database_url)
+    migrate_database_schema(database_url)
     reset_api_state()
     yield
     reset_api_state()

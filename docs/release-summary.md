@@ -23,6 +23,11 @@ Agent Runway is a backend-first AI workflow automation system. It turns a busine
 - persisted LLM call artifacts and usage records
 - in-memory storage backend
 - SQL-backed durable storage backend
+- Alembic schema migrations
+- PostgreSQL-ready database URL support
+- hybrid Go control-plane scaffold
+- private Python agent-worker scaffold
+- shared worker-boundary contracts
 - FastAPI endpoints for the current execution workflow
 - unit and integration coverage for the implemented spine
 
@@ -37,11 +42,14 @@ Environment:
 
 ### SQL mode
 
-Durable local persistence using SQLite through SQLAlchemy with a PostgreSQL-ready repository boundary.
+Durable persistence using SQLAlchemy and Alembic migrations.
 
 Environment:
 - `STORAGE_BACKEND=sql`
 - `DATABASE_URL=sqlite:///./.workdir/multi_agent_platform.db`
+
+Migration command:
+- `make migrate`
 
 ## Execution modes
 
@@ -104,6 +112,9 @@ Full release-ready validation:
 Run API locally:
     uv run uvicorn multi_agent_platform.main:app --reload
 
+Run hybrid services:
+    make hybrid-up
+
 ## Smoke commands
 
 Memory mode:
@@ -117,8 +128,6 @@ Fake LLM mode:
 
 ## Current limitations
 
-- no Alembic migrations yet
-- no PostgreSQL deployment profile yet
 - no auth or RBAC
 - no frontend operator console
 - no observability stack
@@ -127,9 +136,8 @@ Fake LLM mode:
 
 ## Recommended next roadmap
 
-- add Alembic migrations
-- add PostgreSQL environment profile
 - add richer provider policies
+- complete Go API parity with the Python reference API
 - add LLM-backed planning
 - add authentication and authorization
 - add observability and tracing

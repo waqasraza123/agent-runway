@@ -3,7 +3,6 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from multi_agent_platform import WEB_DIRECTORY
-
 from multi_agent_platform.api.routes.health import router as health_router
 from multi_agent_platform.api.routes.runs import router as runs_router
 

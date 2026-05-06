@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agent_runway
+      POSTGRES_PASSWORD: agent_runway
+      POSTGRES_DB: agent_runway
+    ports:
+      - "5432:5432"
+    volumes:
+      - agent_runway_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_runway -d agent_runway"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  agent-worker:
+    image: python:3.12-slim
+    working_dir: /workspace
+    volumes:
+      - ../..:/workspace
+    environment:
+      AGENT_WORKER_TOKEN: local-agent-worker-token
+      LLM_PROVIDER_NAME: fake
+      LLM_MODEL_NAME: fake-model
+    command: >
+      sh -c "pip install uv &&
+      uv sync --frozen --no-dev &&
+      uv run uvicorn services.agent_worker.app:app --host 0.0.0.0 --port 8090"
+    ports:
+      - "8090:8090"
+
+  migrate:
+    image: python:3.12-slim
+    working_dir: /workspace
+    volumes:
+      - ../..:/workspace
+    environment:
+      DATABASE_URL: postgresql+psycopg://agent_runway:agent_runway@postgres:5432/agent_runway
+    command: >
+      sh -c "pip install uv &&
+      uv sync --frozen --no-dev &&
+      uv run alembic upgrade head"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api-go:
+    image: golang:1.22
+    working_dir: /workspace/apps/api-go
+    volumes:
+      - ../..:/workspace
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8080"
+      DATABASE_URL: postgres://agent_runway:agent_runway@postgres:5432/agent_runway?sslmode=disable
+      AGENT_WORKER_URL: http://agent-worker:8090
+      AGENT_WORKER_TOKEN: local-agent-worker-token
+    command: go run ./cmd/api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      agent-worker:
+        condition: service_started
+    ports:
+      - "8080:8080"
+
+volumes:
+  agent_runway_postgres:

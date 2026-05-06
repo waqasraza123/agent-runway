@@ -13,10 +13,8 @@ from multi_agent_platform.config.settings import (
     reset_settings_cache,
 )
 from multi_agent_platform.contracts.turn_execution import ExecutionBackend
-from multi_agent_platform.storage.db.session import (
-    ensure_database_schema,
-    get_session_factory,
-)
+from multi_agent_platform.storage.db.migrations import assert_database_schema_current
+from multi_agent_platform.storage.db.session import get_session_factory
 from multi_agent_platform.storage.llm_call_repository import (
     InMemoryLlmCallRepository,
 )
@@ -98,7 +96,7 @@ def build_memory_run_service(settings: Settings) -> RunService:
 
 
 def build_sql_run_service(settings: Settings) -> RunService:
-    ensure_database_schema(settings.database_url)
+    assert_database_schema_current(settings.database_url)
     session_factory = get_session_factory(settings.database_url)
     return RunService(
         run_repository=SqlAlchemyRunRepository(session_factory),

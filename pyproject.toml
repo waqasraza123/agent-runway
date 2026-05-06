@@ -19,8 +19,10 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
+    "alembic>=1.17,<2",
     "fastapi>=0.115,<1",
     "pydantic>=2,<3",
+    "psycopg[binary]>=3.2,<4",
     "sqlalchemy>=2.0.48",
     "uvicorn>=0.34,<1",
 ]

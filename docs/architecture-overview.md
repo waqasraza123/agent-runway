@@ -6,6 +6,16 @@ The platform is a backend-first multi-agent execution system that turns a user g
 
 ## Layering
 
+## Hybrid target architecture
+
+The next backend architecture is a hybrid Go and Python deployment.
+
+- Go is the control plane for the public API, persistence, orchestration, and run state transitions.
+- Python is the private agent worker for LLM/provider execution.
+- Go calls Python through `POST /internal/agent/turn`.
+- Python returns structured execution outcomes and does not mutate run state directly.
+- The current Python FastAPI app remains the reference implementation while the Go API reaches parity.
+
 ### API layer
 FastAPI routes expose the workflow and translate application errors into HTTP responses.
 

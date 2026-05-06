@@ -33,10 +33,3 @@ def get_engine(database_url: str) -> Engine:
 def get_session_factory(database_url: str) -> sessionmaker[Session]:
     engine = get_engine(database_url)
     return sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
-
-
-def ensure_database_schema(database_url: str) -> None:
-    from multi_agent_platform.storage.db.base import Base
-
-    engine = get_engine(database_url)
-    Base.metadata.create_all(engine)
